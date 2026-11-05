@@ -472,9 +472,6 @@ with header_logo:
     company_logo = COMPANY_LOGOS.get(selected_company_name)
     if company_logo and company_logo.exists():
         st.image(str(company_logo), width=220)
-with header_title:
-    st.subheader(selected_company_name)
-    st.caption("Ingeniería aplicada para soportar sus obras")
 
 records = get_equipment(selected_company_id)
 inventory_tab, sheets_tab = st.tabs(["Inventario", "Hojas de vida"])
