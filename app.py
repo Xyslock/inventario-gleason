@@ -10,6 +10,11 @@ import streamlit as st
 
 DATABASE_PATH = Path(__file__).with_name("inventario.db")
 LOGO_PATH = Path(__file__).with_name("Logo-con-Slogan.jpg")
+DEJANDO_HUELLA_LOGO_PATH = Path(__file__).with_name("logo-dejando-huella.png")
+COMPANY_LOGOS = {
+    "Equipos Gleason S.A.": LOGO_PATH,
+    "Dejando Huella Fertilidad": DEJANDO_HUELLA_LOGO_PATH,
+}
 PASSWORD_ITERATIONS = 310_000
 
 FIELD_GROUPS = {
@@ -95,9 +100,12 @@ def initialize_database():
             )
             """
         )
-        connection.execute(
+        connection.executemany(
             "INSERT OR IGNORE INTO companies (name) VALUES (?)",
-            ("Equipos Gleason S.A.",),
+            [
+                ("Equipos Gleason S.A.",),
+                ("Dejando Huella Fertilidad",),
+            ],
         )
         default_company_id = connection.execute(
             "SELECT id FROM companies WHERE name = ?",
@@ -439,14 +447,8 @@ def render_admin_access():
 initialize_database()
 is_admin = render_admin_access()
 
-header_logo, header_title = st.columns([1, 3])
-with header_logo:
-    if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=180)
-with header_title:
-    st.title("Sistema de inventario")
-    st.caption("Ingeniería aplicada para soportar sus obras")
-
+st.title("Sistema de inventario")
+st.caption("Selecciona la empresa cuyos equipos deseas consultar.")
 companies = get_companies()
 company_names = {company["id"]: company["name"] for company in companies}
 selected_company_id = st.selectbox(
@@ -464,7 +466,16 @@ if selected_company_id not in company_names:
     st.error("La empresa seleccionada no es válida. Elige una empresa de la lista.")
     st.stop()
 
-st.subheader(company_names[selected_company_id])
+selected_company_name = company_names[selected_company_id]
+header_logo, header_title = st.columns([1, 3])
+with header_logo:
+    company_logo = COMPANY_LOGOS.get(selected_company_name)
+    if company_logo and company_logo.exists():
+        st.image(str(company_logo), width=220)
+with header_title:
+    st.subheader(selected_company_name)
+    st.caption("Ingeniería aplicada para soportar sus obras")
+
 records = get_equipment(selected_company_id)
 inventory_tab, sheets_tab = st.tabs(["Inventario", "Hojas de vida"])
 with inventory_tab:

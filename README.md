@@ -28,7 +28,8 @@ Al abrir la aplicación, selecciona una empresa de la lista para consultar sus
 equipos. El administrador puede agregar empresas desde la opción **Agregar
 empresa** de la barra lateral. Cada empresa tiene su propio inventario y hojas
 de vida; los registros que ya existían quedan asignados a **Equipos Gleason
-S.A.**.
+S.A.**. La lista incluye **Dejando Huella Fertilidad**, con su logo al
+seleccionarla.
 
 Para permitir consultas desde otros computadores de la misma red, inicia
 Streamlit con `python -m streamlit run app.py --server.address 0.0.0.0` y limita
