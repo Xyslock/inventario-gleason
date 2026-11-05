@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+venv/
+.streamlit/secrets.toml
+inventario.db
+inventario.db-shm
+inventario.db-wal
