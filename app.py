@@ -70,6 +70,7 @@ st.set_page_config(page_title="Inventario | Equipos Gleason", page_icon="📋", 
 def get_connection():
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
@@ -87,14 +88,42 @@ def initialize_database():
             """
         )
         connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS companies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE
+            )
+            """
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO companies (name) VALUES (?)",
+            ("Equipos Gleason S.A.",),
+        )
+        default_company_id = connection.execute(
+            "SELECT id FROM companies WHERE name = ?",
+            ("Equipos Gleason S.A.",),
+        ).fetchone()["id"]
+        connection.execute(
             f"""
             CREATE TABLE IF NOT EXISTS equipment (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL REFERENCES companies(id),
                 {definitions},
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
+        )
+        equipment_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(equipment)")
+        }
+        if "company_id" not in equipment_columns:
+            connection.execute(
+                "ALTER TABLE equipment ADD COLUMN company_id INTEGER REFERENCES companies(id)"
+            )
+        connection.execute(
+            "UPDATE equipment SET company_id = ? WHERE company_id IS NULL",
+            (default_company_id,),
         )
 
 
@@ -129,39 +158,63 @@ def authenticate_admin(password):
     return hmac.compare_digest(candidate, admin["password_hash"])
 
 
-def get_equipment():
+def get_companies():
+    with get_connection() as connection:
+        return [
+            dict(row)
+            for row in connection.execute(
+                "SELECT id, name FROM companies ORDER BY name COLLATE NOCASE"
+            ).fetchall()
+        ]
+
+
+def create_company(name):
+    with get_connection() as connection:
+        cursor = connection.execute(
+            "INSERT INTO companies (name) VALUES (?)", (name.strip(),)
+        )
+        return cursor.lastrowid
+
+
+def get_equipment(company_id):
     with get_connection() as connection:
         return [
             dict(row)
             for row in connection.execute(
                 "SELECT id, "
                 + ", ".join(f'"{key}"' for key in FIELD_KEYS)
-                + " FROM equipment ORDER BY id DESC"
+                + " FROM equipment WHERE company_id = ? ORDER BY id DESC",
+                (company_id,),
             ).fetchall()
         ]
 
 
-def save_equipment(values, equipment_id=None):
+def save_equipment(values, company_id, equipment_id=None):
     fields_sql = ", ".join(f'"{key}"' for key in FIELD_KEYS)
     values_sql = ", ".join("?" for _ in FIELD_KEYS)
     field_values = [values[key] for key in FIELD_KEYS]
     with get_connection() as connection:
         if equipment_id is None:
             connection.execute(
-                f"INSERT INTO equipment ({fields_sql}) VALUES ({values_sql})",
-                field_values,
+                f"INSERT INTO equipment (company_id, {fields_sql}) "
+                f"VALUES (?, {values_sql})",
+                [company_id, *field_values],
             )
         else:
             assignments = ", ".join(f'"{key}" = ?' for key in FIELD_KEYS)
             connection.execute(
-                f"UPDATE equipment SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                [*field_values, equipment_id],
+                f"UPDATE equipment SET {assignments}, updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ? AND company_id = ?",
+                [*field_values, equipment_id, company_id],
             )
 
 
-def delete_equipment(equipment_id):
+def delete_equipment(equipment_id, company_id):
     with get_connection() as connection:
-        connection.execute("DELETE FROM equipment WHERE id = ?", (equipment_id,))
+        connection.execute(
+            "DELETE FROM equipment WHERE id = ? AND company_id = ?",
+            (equipment_id, company_id),
+        )
 
 
 def draw_equipment_form(data, prefix):
@@ -264,7 +317,7 @@ def render_inventory(records):
     show_record_details(selected)
 
 
-def render_sheets(records, is_admin):
+def render_sheets(records, is_admin, company_id):
     st.subheader("Hojas de vida")
     st.caption("La hoja de vida concentra los datos técnicos, de asignación y mantenimiento de cada equipo.")
 
@@ -274,7 +327,7 @@ def render_sheets(records, is_admin):
                 values = draw_equipment_form({}, "new")
                 submitted = st.form_submit_button("Guardar hoja de vida", type="primary")
             if submitted:
-                save_equipment(values)
+                save_equipment(values, company_id)
                 st.success("Hoja de vida creada y agregada al inventario.")
                 st.rerun()
 
@@ -300,7 +353,7 @@ def render_sheets(records, is_admin):
                 values = draw_equipment_form(initial_values, f"edit_{selected_id}")
                 submitted = st.form_submit_button("Guardar cambios", type="primary")
             if submitted:
-                save_equipment(values, selected_id)
+                save_equipment(values, company_id, selected_id)
                 st.success("Cambios guardados en la hoja de vida y el inventario.")
                 st.rerun()
 
@@ -316,9 +369,30 @@ def render_sheets(records, is_admin):
                 disabled=not confirmed,
                 key=f"delete_{selected_id}",
             ):
-                delete_equipment(selected_id)
+                delete_equipment(selected_id, company_id)
                 st.success("Registro eliminado.")
                 st.rerun()
+
+
+def render_company_management():
+    with st.sidebar.expander("Agregar empresa"):
+        with st.form("create_company_form"):
+            company_name = st.text_input("Nombre de la empresa")
+            submitted = st.form_submit_button("Agregar empresa")
+        if submitted:
+            company_name = company_name.strip()
+            if not company_name:
+                st.sidebar.error("Escribe el nombre de la empresa.")
+                return
+            if any(
+                company["name"].casefold() == company_name.casefold()
+                for company in get_companies()
+            ):
+                st.sidebar.error("Ya existe una empresa con ese nombre.")
+                return
+            company_id = create_company(company_name)
+            st.session_state["company_selected"] = company_id
+            st.rerun()
 
 
 def render_admin_access():
@@ -328,6 +402,7 @@ def render_admin_access():
         if st.sidebar.button("Cerrar sesión"):
             st.session_state.pop("is_admin", None)
             st.rerun()
+        render_company_management()
         return True
 
     if not admin_exists():
@@ -370,11 +445,29 @@ with header_logo:
         st.image(str(LOGO_PATH), width=180)
 with header_title:
     st.title("Sistema de inventario")
-    st.caption("Equipos Gleason S.A. · Ingeniería aplicada para soportar sus obras")
+    st.caption("Ingeniería aplicada para soportar sus obras")
 
-records = get_equipment()
+companies = get_companies()
+company_names = {company["id"]: company["name"] for company in companies}
+selected_company_id = st.selectbox(
+    "Selecciona la empresa que deseas abrir",
+    options=list(company_names),
+    index=None,
+    placeholder="Elige una empresa...",
+    format_func=company_names.get,
+    key="company_selected",
+)
+if selected_company_id is None:
+    st.info("Selecciona una empresa para consultar su inventario y sus hojas de vida.")
+    st.stop()
+if selected_company_id not in company_names:
+    st.error("La empresa seleccionada no es válida. Elige una empresa de la lista.")
+    st.stop()
+
+st.subheader(company_names[selected_company_id])
+records = get_equipment(selected_company_id)
 inventory_tab, sheets_tab = st.tabs(["Inventario", "Hojas de vida"])
 with inventory_tab:
     render_inventory(records)
 with sheets_tab:
-    render_sheets(records, is_admin)
+    render_sheets(records, is_admin, selected_company_id)

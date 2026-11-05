@@ -24,6 +24,12 @@ barra lateral. Debe tener al menos 12 caracteres. No existe registro de otros
 usuarios: quien no inicia sesión puede consultar, pero no crear, modificar ni
 eliminar equipos.
 
+Al abrir la aplicación, selecciona una empresa de la lista para consultar sus
+equipos. El administrador puede agregar empresas desde la opción **Agregar
+empresa** de la barra lateral. Cada empresa tiene su propio inventario y hojas
+de vida; los registros que ya existían quedan asignados a **Equipos Gleason
+S.A.**.
+
 Para permitir consultas desde otros computadores de la misma red, inicia
 Streamlit con `python -m streamlit run app.py --server.address 0.0.0.0` y limita
 el acceso mediante la red y el firewall de la empresa. El acceso de lectura no
